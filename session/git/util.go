@@ -2,7 +2,9 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -52,6 +54,26 @@ func checkGHCLI() error {
 func IsGitRepo(path string) bool {
 	cmd := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
 	return cmd.Run() == nil
+}
+
+// FindRepos returns the direct subdirectories of root that are git repositories or worktrees.
+func FindRepos(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory %s: %w", root, err)
+	}
+	var repos []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		// Worktrees have a .git file instead of a directory, Stat accepts both.
+		if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+			repos = append(repos, path)
+		}
+	}
+	return repos, nil
 }
 
 func findGitRepoRoot(path string) (string, error) {

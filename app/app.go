@@ -46,6 +46,8 @@ const (
 	stateHelp
 	// stateConfirm is the state when a confirmation modal is displayed.
 	stateConfirm
+	// stateRepoPick is the state when the user picks the repository for a new instance.
+	stateRepoPick
 )
 
 type home struct {
@@ -62,6 +64,8 @@ type home struct {
 	appConfig *config.Config
 	// appState stores persistent application state like seen help screens
 	appState config.AppState
+	// repoRoot is set when started outside a git repo: new instances pick a repo below it.
+	repoRoot string
 
 	// -- State --
 
@@ -101,6 +105,10 @@ type home struct {
 	textOverlay *overlay.TextOverlay
 	// confirmationOverlay displays confirmation modals
 	confirmationOverlay *overlay.ConfirmationOverlay
+	// repoPicker selects the repository for a new instance
+	repoPicker *overlay.RepoPicker
+	// afterRepoPick continues instance creation with the picked repo path
+	afterRepoPick func(repoPath string) (tea.Model, tea.Cmd)
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -128,6 +136,9 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 		autoYes:   autoYes,
 		state:     stateDefault,
 		appState:  appState,
+	}
+	if currentDir, err := os.Getwd(); err == nil && !git.IsGitRepo(currentDir) {
+		h.repoRoot = currentDir
 	}
 	h.tabbedWindow = ui.NewTabbedWindow(ui.NewGridPane(&h.spinner), ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewTerminalPane())
 	h.list = ui.NewList(&h.spinner, autoYes)
@@ -311,6 +322,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.handleError(msg.err), m.instanceChanged())
 		}
 
+		// The repo name is only known once the worktree exists.
+		if msg.registerRepo != nil {
+			msg.registerRepo()
+		}
+
 		// Save after successful start
 		if err := m.storage.SaveInstances(m.list.GetInstances()); err != nil {
 			return m, m.handleError(err)
@@ -358,7 +374,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyMsg) (cmd tea.Cmd, returnEarly 
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateRepoPick {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -395,6 +411,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m.handleHelpState(msg)
 	}
 
+	if m.state == stateRepoPick {
+		return m.handleRepoPickState(msg)
+	}
+
 	if m.state == stateNew {
 		// Handle quit commands first. Don't handle q because the user might want to type that.
 		if msg.String() == "ctrl+c" {
@@ -429,9 +449,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				return m, tea.Batch(tea.WindowSize(), initialSearch)
 			}
 
-			// Set Loading status and finalize into the list immediately
 			instance.SetStatus(session.Loading)
-			m.newInstanceFinalizer()
+			registerRepo := m.newInstanceFinalizer
 			m.promptAfterName = false
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
@@ -441,6 +460,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				err := instance.Start(true)
 				return instanceStartedMsg{
 					instance:        instance,
+					registerRepo:    registerRepo,
 					err:             err,
 					promptAfterName: false,
 				}
@@ -516,9 +536,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 					}
 					selected.Prompt = prompt
 
-					// Finalize into list and start
 					selected.SetStatus(session.Loading)
-					m.newInstanceFinalizer()
+					registerRepo := m.newInstanceFinalizer
 					m.textInputOverlay = nil
 					m.state = stateDefault
 					m.menu.SetState(ui.StateDefault)
@@ -527,6 +546,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 						err := selected.Start(true)
 						return instanceStartedMsg{
 							instance:        selected,
+							registerRepo:    registerRepo,
 							err:             err,
 							promptAfterName: false,
 							selectedBranch:  selectedBranch,
@@ -616,49 +636,19 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
 		}
 
-		// Start a background fetch so branches are up to date by the time the picker opens
-		fetchCmd := func() tea.Msg {
-			currentDir, _ := os.Getwd()
-			git.FetchBranches(currentDir)
-			return nil
+		if m.repoRoot != "" {
+			return m.openRepoPicker(m.createInstanceWithPrompt)
 		}
-
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    ".",
-			Program: m.program,
-		})
-		if err != nil {
-			return m, m.handleError(err)
-		}
-
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
-		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
-		m.state = stateNew
-		m.menu.SetState(ui.StateNewInstance)
-		m.promptAfterName = true
-
-		return m, fetchCmd
+		return m.createInstanceWithPrompt(".")
 	case keys.KeyNew:
 		if m.list.NumInstances() >= GlobalInstanceLimit {
 			return m, m.handleError(
 				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
 		}
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    ".",
-			Program: m.program,
-		})
-		if err != nil {
-			return m, m.handleError(err)
+		if m.repoRoot != "" {
+			return m.openRepoPicker(m.createInstance)
 		}
-
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
-		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
-		m.state = stateNew
-		m.menu.SetState(ui.StateNewInstance)
-
-		return m, nil
+		return m.createInstance(".")
 	case keys.KeyUp:
 		m.list.Up()
 		return m, m.instanceChanged()
@@ -872,6 +862,7 @@ type instanceChangedMsg struct{}
 
 type instanceStartedMsg struct {
 	instance        *session.Instance
+	registerRepo    func()
 	err             error
 	promptAfterName bool
 	selectedBranch  string
@@ -901,9 +892,13 @@ func (m *home) scheduleBranchSearch(filter string, version uint64) tea.Cmd {
 
 // runBranchSearch returns a tea.Cmd that performs the git search in the background.
 func (m *home) runBranchSearch(filter string, version uint64) tea.Cmd {
+	// Resolve on the main thread, the selection may change while the search runs.
+	repoPath, _ := os.Getwd()
+	if selected := m.list.GetSelectedInstance(); selected != nil {
+		repoPath = selected.Path
+	}
 	return func() tea.Msg {
-		currentDir, _ := os.Getwd()
-		branches, err := git.SearchBranches(currentDir, filter)
+		branches, err := git.SearchBranches(repoPath, filter)
 		if err != nil {
 			log.WarningLog.Printf("branch search failed: %v", err)
 			return nil
@@ -1076,6 +1071,8 @@ func (m *home) View() string {
 			log.ErrorLog.Printf("text overlay is nil")
 		}
 		return overlay.PlaceOverlay(0, 0, m.textOverlay.Render(), mainView, true, true)
+	} else if m.state == stateRepoPick {
+		return overlay.PlaceOverlay(0, 0, m.repoPicker.Render(), mainView, true, true)
 	} else if m.state == stateConfirm {
 		if m.confirmationOverlay == nil {
 			log.ErrorLog.Printf("confirmation overlay is nil")

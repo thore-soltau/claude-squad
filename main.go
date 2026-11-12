@@ -46,7 +46,10 @@ var (
 			}
 
 			if !git.IsGitRepo(currentDir) {
-				return fmt.Errorf("error: %s must be run from within a git repository", binName)
+				repos, err := git.FindRepos(currentDir)
+				if err != nil || len(repos) == 0 {
+					return fmt.Errorf("error: %s must be run from within a git repository or a folder containing git repositories", binName)
+				}
 			}
 
 			cfg := config.LoadConfig()
