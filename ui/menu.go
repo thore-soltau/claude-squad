@@ -138,6 +138,10 @@ func (m *Menu) addInstanceOptions() {
 		actionGroup = append(actionGroup, keys.KeyCheckout)
 	}
 
+	if m.activeTab == GridTab {
+		actionGroup = append(actionGroup, keys.KeyGridCell)
+	}
+
 	// Navigation group (when in diff tab)
 	if m.activeTab == DiffTab || m.activeTab == TerminalTab {
 		actionGroup = append(actionGroup, keys.KeyShiftUp)

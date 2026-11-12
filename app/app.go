@@ -118,18 +118,18 @@ func newHome(ctx context.Context, program string, autoYes bool) *home {
 	}
 
 	h := &home{
-		ctx:          ctx,
-		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		menu:         ui.NewMenu(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewTerminalPane()),
-		errBox:       ui.NewErrBox(),
-		storage:      storage,
-		appConfig:    appConfig,
-		program:      program,
-		autoYes:      autoYes,
-		state:        stateDefault,
-		appState:     appState,
+		ctx:       ctx,
+		spinner:   spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		menu:      ui.NewMenu(),
+		errBox:    ui.NewErrBox(),
+		storage:   storage,
+		appConfig: appConfig,
+		program:   program,
+		autoYes:   autoYes,
+		state:     stateDefault,
+		appState:  appState,
 	}
+	h.tabbedWindow = ui.NewTabbedWindow(ui.NewGridPane(&h.spinner), ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewTerminalPane())
 	h.list = ui.NewList(&h.spinner, autoYes)
 
 	// Load saved instances
@@ -173,8 +173,8 @@ func (m *home) updateHandleWindowSizeEvent(msg tea.WindowSizeMsg) {
 		m.textOverlay.SetWidth(int(float32(msg.Width) * 0.6))
 	}
 
-	previewWidth, previewHeight := m.tabbedWindow.GetPreviewSize()
-	if err := m.list.SetSessionPreviewSize(previewWidth, previewHeight); err != nil {
+	sessionWidth, sessionHeight := m.tabbedWindow.GetSessionSize()
+	if err := m.list.SetSessionPreviewSize(sessionWidth, sessionHeight); err != nil {
 		log.ErrorLog.Print(err)
 	}
 	m.menu.SetSize(msg.Width, menuHeight)
@@ -243,6 +243,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if r.updated {
 				r.instance.SetStatus(session.Running)
+				r.instance.LastActivity = time.Now()
 			} else if r.hasPrompt {
 				r.instance.TapEnter()
 			} else {
@@ -673,7 +674,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 	case keys.KeyTab:
 		m.tabbedWindow.Toggle()
 		m.menu.SetActiveTab(m.tabbedWindow.GetActiveTab())
-		return m, m.instanceChanged()
+		// Grid cells and preview need different tmux sizes, so trigger a resize.
+		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
 	case keys.KeyKill:
 		selected := m.list.GetSelectedInstance()
 		if selected == nil || selected.Status == session.Loading {
@@ -776,6 +778,13 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(err)
 		}
 		return m, tea.WindowSize()
+	case keys.KeyGridCell:
+		inst := m.tabbedWindow.GridInstance(int(msg.String()[0] - '1'))
+		if inst == nil {
+			return m, nil
+		}
+		m.list.SelectInstance(inst)
+		fallthrough
 	case keys.KeyEnter:
 		if m.list.NumInstances() == 0 {
 			return m, nil
@@ -825,6 +834,9 @@ func (m *home) instanceChanged() tea.Cmd {
 	// Update menu with current instance
 	m.menu.SetInstance(selected)
 
+	if err := m.tabbedWindow.UpdateGrid(m.list.GetInstances(), selected); err != nil {
+		return m.handleError(err)
+	}
 	// If there's no selected instance, we don't need to update the preview.
 	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
 		return m.handleError(err)

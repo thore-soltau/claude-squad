@@ -31,7 +31,8 @@ var (
 )
 
 const (
-	PreviewTab int = iota
+	GridTab int = iota
+	PreviewTab
 	DiffTab
 	TerminalTab
 )
@@ -50,19 +51,22 @@ type TabbedWindow struct {
 	height    int
 	width     int
 
+	grid     *GridPane
 	preview  *PreviewPane
 	diff     *DiffPane
 	terminal *TerminalPane
 	instance *session.Instance
 }
 
-func NewTabbedWindow(preview *PreviewPane, diff *DiffPane, terminal *TerminalPane) *TabbedWindow {
+func NewTabbedWindow(grid *GridPane, preview *PreviewPane, diff *DiffPane, terminal *TerminalPane) *TabbedWindow {
 	return &TabbedWindow{
 		tabs: []string{
+			"Grid",
 			"Preview",
 			"Diff",
 			"Terminal",
 		},
+		grid:     grid,
 		preview:  preview,
 		diff:     diff,
 		terminal: terminal,
@@ -90,17 +94,38 @@ func (w *TabbedWindow) SetSize(width, height int) {
 	contentHeight := height - tabHeight - windowStyle.GetVerticalFrameSize() - 2
 	contentWidth := w.width - windowStyle.GetHorizontalFrameSize()
 
+	w.grid.SetSize(contentWidth, contentHeight)
 	w.preview.SetSize(contentWidth, contentHeight)
 	w.diff.SetSize(contentWidth, contentHeight)
 	w.terminal.SetSize(contentWidth, contentHeight)
 }
 
-func (w *TabbedWindow) GetPreviewSize() (width, height int) {
+// GetSessionSize is the tmux size sessions should have for the active tab.
+func (w *TabbedWindow) GetSessionSize() (width, height int) {
+	if w.activeTab == GridTab {
+		return w.grid.CellContentSize()
+	}
 	return w.preview.width, w.preview.height
 }
 
 func (w *TabbedWindow) Toggle() {
 	w.activeTab = (w.activeTab + 1) % len(w.tabs)
+}
+
+// UpdateGrid refreshes the grid. Only updates when the grid tab is active.
+func (w *TabbedWindow) UpdateGrid(instances []*session.Instance, selected *session.Instance) error {
+	if w.activeTab != GridTab {
+		return nil
+	}
+	return w.grid.UpdateContent(instances, selected)
+}
+
+// GridInstance returns the session in the given grid cell, or nil outside the grid tab.
+func (w *TabbedWindow) GridInstance(cell int) *session.Instance {
+	if w.activeTab != GridTab {
+		return nil
+	}
+	return w.grid.Instance(cell)
 }
 
 // UpdatePreview updates the content of the preview pane. instance may be nil.
@@ -257,6 +282,8 @@ func (w *TabbedWindow) String() string {
 	row := lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
 	var content string
 	switch w.activeTab {
+	case GridTab:
+		content = w.grid.String()
 	case PreviewTab:
 		content = w.preview.String()
 	case DiffTab:

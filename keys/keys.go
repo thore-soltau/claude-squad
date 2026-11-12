@@ -32,6 +32,8 @@ const (
 	// Reorder keybindings
 	KeyMoveUp
 	KeyMoveDown
+
+	KeyGridCell // Attach to the session in grid cell 1-4.
 )
 
 // GlobalKeyStringsMap is a global, immutable map string to keybinding.
@@ -55,6 +57,10 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"r":          KeyResume,
 	"p":          KeySubmit,
 	"?":          KeyHelp,
+	"1":          KeyGridCell,
+	"2":          KeyGridCell,
+	"3":          KeyGridCell,
+	"4":          KeyGridCell,
 }
 
 // GlobalkeyBindings is a global, immutable map of KeyName tot keybinding.
@@ -123,6 +129,10 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyMoveDown: key.NewBinding(
 		key.WithKeys("J"),
 		key.WithHelp("J", "move down"),
+	),
+	KeyGridCell: key.NewBinding(
+		key.WithKeys("1", "2", "3", "4"),
+		key.WithHelp("1-4", "open cell"),
 	),
 
 	// -- Special keybindings --

@@ -52,6 +52,8 @@ type Instance struct {
 	AutoYes bool
 	// Prompt is the initial prompt to pass to the instance on startup
 	Prompt string
+	// LastActivity is when the pane output last changed. Not persisted, only drives the grid view.
+	LastActivity time.Time
 
 	// DiffStats stores the current git diff statistics
 	diffStats *git.DiffStats
