@@ -1,14 +1,11 @@
 package overlay
 
 import (
-	"bytes"
 	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
-	"github.com/muesli/ansi"
-	"github.com/muesli/reflow/truncate"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 )
 
@@ -23,7 +20,7 @@ func getLines(s string) (lines []string, widest int) {
 	lines = strings.Split(s, "\n")
 
 	for _, l := range lines {
-		w := ansi.PrintableRuneWidth(l)
+		w := ansi.StringWidth(l)
 		if widest < w {
 			widest = w
 		}
@@ -145,8 +142,8 @@ func PlaceOverlay(
 
 		pos := 0
 		if placeX > 0 {
-			left := truncate.String(bgLine, uint(placeX))
-			pos = ansi.PrintableRuneWidth(left)
+			left := ansi.Truncate(bgLine, placeX, "")
+			pos = ansi.StringWidth(left)
 			b.WriteString(left)
 			if pos < placeX {
 				b.WriteString(ws.render(placeX - pos))
@@ -156,56 +153,17 @@ func PlaceOverlay(
 
 		fgLine := fgLines[i-placeY]
 		b.WriteString(fgLine)
-		pos += ansi.PrintableRuneWidth(fgLine)
+		pos += ansi.StringWidth(fgLine)
 
-		right := cutLeft(bgLine, pos)
-		bgLineWidth := ansi.PrintableRuneWidth(bgLine)
-		rightWidth := ansi.PrintableRuneWidth(right)
+		right := ansi.TruncateLeft(bgLine, pos, "")
+		bgLineWidth := ansi.StringWidth(bgLine)
+		rightWidth := ansi.StringWidth(right)
 		if rightWidth <= bgLineWidth-pos {
 			b.WriteString(ws.render(bgLineWidth - rightWidth - pos))
 		}
 		b.WriteString(right)
 	}
 
-	return b.String()
-}
-
-func cutLeft(s string, cutWidth int) string {
-	var (
-		pos    int
-		isAnsi bool
-		ab     bytes.Buffer
-		b      bytes.Buffer
-	)
-	for _, c := range s {
-		var w int
-		if c == ansi.Marker || isAnsi {
-			isAnsi = true
-			ab.WriteRune(c)
-			if ansi.IsTerminator(c) {
-				isAnsi = false
-				if bytes.HasSuffix(ab.Bytes(), []byte("[0m")) {
-					ab.Reset()
-				}
-			}
-		} else {
-			w = runewidth.RuneWidth(c)
-		}
-
-		if pos >= cutWidth {
-			if b.Len() == 0 {
-				if ab.Len() > 0 {
-					b.Write(ab.Bytes())
-				}
-				if pos-cutWidth > 1 {
-					b.WriteByte(' ')
-					continue
-				}
-			}
-			b.WriteRune(c)
-		}
-		pos += w
-	}
 	return b.String()
 }
 
@@ -249,12 +207,12 @@ func (w whitespace) render(width int) string {
 		if j >= len(r) {
 			j = 0
 		}
-		i += ansi.PrintableRuneWidth(string(r[j]))
+		i += ansi.StringWidth(string(r[j]))
 	}
 
 	// Fill any extra gaps white spaces. This might be necessary if any runes
 	// are more than one cell wide, which could leave a one-rune gap.
-	short := width - ansi.PrintableRuneWidth(b.String())
+	short := width - ansi.StringWidth(b.String())
 	if short > 0 {
 		b.WriteString(strings.Repeat(" ", short))
 	}

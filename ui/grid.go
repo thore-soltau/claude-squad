@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/reflow/truncate"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const gridSlots = 4
@@ -105,14 +105,14 @@ func (g *GridPane) renderCell(i int) string {
 		style = selectedGridCellStyle.Width(width).Height(height + 1)
 	}
 
-	title := truncate.StringWithTail(g.statusIcon(inst)+inst.Title, uint(width), "...")
+	title := ansi.Truncate(g.statusIcon(inst)+inst.Title, width, "...")
 	lines := strings.Split(strings.TrimRight(g.content[i], "\n"), "\n")
 	if len(lines) > height {
 		lines = lines[len(lines)-height:]
 	}
 	for j, line := range lines {
 		// Reset so colors cut off mid-line don't bleed into the cell border.
-		lines[j] = truncate.String(line, uint(width)) + ansiReset
+		lines[j] = ansi.Truncate(line, width, "") + ansiReset
 	}
 	return style.Render(title + "\n" + strings.Join(lines, "\n"))
 }

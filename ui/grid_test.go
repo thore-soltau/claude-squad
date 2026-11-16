@@ -2,9 +2,11 @@ package ui
 
 import (
 	"claude-squad/session"
+	"strings"
 	"testing"
 	"time"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,4 +79,18 @@ func TestGridInstanceIsNilOutsideGridTab(t *testing.T) {
 	window.Toggle()
 
 	assert.Nil(t, window.GridInstance(0))
+}
+
+func TestRenderCellKeepsHyperlinkIntactWhenTruncating(t *testing.T) {
+	inst := &session.Instance{Title: "a", Status: session.Paused}
+	link := xansi.SetHyperlink("https://github.com/ZooRoyal/claude-squad/pull/1234567890") + "PR" + xansi.ResetHyperlink()
+	grid := NewGridPane(nil)
+	grid.SetSize(80, 20)
+	grid.slots[0] = inst
+	grid.content[0] = "auto mode on · " + link + strings.Repeat(" more text", 10)
+
+	cell := grid.renderCell(0)
+
+	assert.Contains(t, xansi.Strip(cell), "auto mode on · PR")
+	assert.Contains(t, cell, xansi.ResetHyperlink())
 }
