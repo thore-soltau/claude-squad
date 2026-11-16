@@ -435,7 +435,13 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		// Start the instance (enable previews etc) and go back to the main menu state.
 		case tea.KeyEnter:
 			if len(instance.Title) == 0 {
-				return m, m.handleError(fmt.Errorf("title cannot be empty"))
+				repoName, err := git.RepoName(instance.Path)
+				if err != nil {
+					return m, m.handleError(err)
+				}
+				if err := instance.SetTitle(uniqueTitle(repoName, m.list.GetInstances())); err != nil {
+					return m, m.handleError(err)
+				}
 			}
 
 			// If promptAfterName, show prompt+branch overlay before starting

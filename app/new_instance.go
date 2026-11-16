@@ -74,3 +74,16 @@ func (m *home) handleRepoPickState(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return next(repoPath)
 }
+
+// uniqueTitle appends a counter to name while another session already uses it.
+func uniqueTitle(name string, instances []*session.Instance) string {
+	taken := make(map[string]bool, len(instances))
+	for _, inst := range instances {
+		taken[inst.Title] = true
+	}
+	title := name
+	for n := 2; taken[title]; n++ {
+		title = fmt.Sprintf("%s-%d", name, n)
+	}
+	return title
+}

@@ -76,6 +76,15 @@ func FindRepos(root string) ([]string, error) {
 	return repos, nil
 }
 
+// RepoName returns the name of the repository containing path.
+func RepoName(path string) (string, error) {
+	root, err := findGitRepoRoot(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(root), nil
+}
+
 func findGitRepoRoot(path string) (string, error) {
 	cmd := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()

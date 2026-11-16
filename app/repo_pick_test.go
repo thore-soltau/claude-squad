@@ -2,9 +2,11 @@ package app
 
 import (
 	"claude-squad/config"
+	"claude-squad/session"
 	"claude-squad/ui"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -25,6 +27,7 @@ func newMultiRepoHome(t *testing.T) (*home, string) {
 		appConfig: config.DefaultConfig(),
 		list:      ui.NewList(&sp, false),
 		menu:      ui.NewMenu(),
+		errBox:    ui.NewErrBox(),
 		tabbedWindow: ui.NewTabbedWindow(
 			ui.NewGridPane(&sp), ui.NewPreviewPane(), ui.NewDiffPane(), ui.NewTerminalPane()),
 		repoRoot: root,
@@ -72,4 +75,34 @@ func TestSubmittingNameDoesNotRegisterRepoBeforeStart(t *testing.T) {
 
 	assert.Equal(t, stateDefault, h.state)
 	assert.Equal(t, 0, calls)
+}
+
+func TestSubmittingEmptyNameFallsBackToRepoName(t *testing.T) {
+	h, _ := newMultiRepoHome(t)
+	repo := filepath.Join(t.TempDir(), "shop")
+	require.NoError(t, exec.Command("git", "init", repo).Run())
+	subdir := filepath.Join(repo, "src")
+	require.NoError(t, os.Mkdir(subdir, 0o755))
+	h.createInstance(subdir)
+
+	press(h, tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.Equal(t, stateDefault, h.state)
+	assert.Equal(t, "shop", h.list.GetSelectedInstance().Title)
+}
+
+func TestSubmittingEmptyNameAddsCounterWhenRepoNameIsTaken(t *testing.T) {
+	h, _ := newMultiRepoHome(t)
+	repo := filepath.Join(t.TempDir(), "shop")
+	require.NoError(t, exec.Command("git", "init", repo).Run())
+	for _, title := range []string{"shop", "shop-2"} {
+		inst, err := session.NewInstance(session.InstanceOptions{Title: title, Path: repo})
+		require.NoError(t, err)
+		h.list.AddInstance(inst)
+	}
+	h.createInstance(repo)
+
+	press(h, tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.Equal(t, "shop-3", h.list.GetSelectedInstance().Title)
 }
